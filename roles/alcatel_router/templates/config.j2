@@ -1,0 +1,481 @@
+exit all
+configure
+#--------------------------------------------------
+echo "System Configuration"
+#--------------------------------------------------
+    system
+        name "{{ management.hostname }}"
+        contact "Team"
+        location "{{ management.location }}"
+        snmp
+            packet-size 9216
+            no shutdown
+        exit
+        login-control
+            exponential-backoff
+        exit
+        time
+            ntp
+                server 10.99.99.99 prefer
+                server 10.99.99.98
+                no shutdown
+            exit
+            sntp
+                shutdown
+            exit
+            dst-zone CDT
+                start second sunday march 02:00
+                end first sunday november 02:00
+            exit
+            zone CST 
+        exit
+        thresholds
+            rmon
+            exit
+            cflash-cap-alarm cf3-A: rising-threshold 204800000 falling-threshold 192000000 interval 3600 
+        exit
+        lldp
+            tx-interval 10
+            tx-hold-multiplier 3
+            reinit-delay 5
+            notification-interval 10
+        exit
+    exit
+#--------------------------------------------------
+echo "System Security Configuration"
+#--------------------------------------------------
+    system
+        security
+            ftp-server
+            no user "admin"
+            password
+                authentication-order tacplus local  exit-on-reject
+            exit
+            tacplus
+                accounting record-type start-stop
+                authorization
+                server 1 address 10.99.99.99 secret my-secret 
+                server 2 address 10.99.99.98 secret my-secret
+            exit
+            user-template "tacplus_default"
+                access console ftp 
+            exit
+            no user "admin"
+            user "netops"
+                password netops 
+                access console ftp snmp 
+                console
+                    cannot-change-password
+                    member "default"
+                    member "administrative"
+                exit
+            exit
+            snmp
+                community "Alcatel-Lucent" rwa version both
+            exit
+            ssh
+                preserve-key
+            exit
+        exit
+    exit
+#--------------------------------------------------
+echo "Log Configuration"
+#--------------------------------------------------
+    log 
+        event-control "vrtr" 2034 generate
+        syslog 8
+            address 10.99.99.99
+        exit
+        syslog 9
+            address 10.99.99.98
+        exit 
+        snmp-trap-group 98
+            description "5620sam"
+            trap-target "10.99.99.99:162" address 10.99.99.99 snmpv2c notify-community "Alcatel-Lucenttrap98"
+            trap-target "10.99.99.98:162" address 10.99.99.98 snmpv2c notify-community "Alcatel-Lucenttrap98"
+        exit 
+        log-id 1 
+            description "Login Attempts"
+            from security 
+            to memory 200
+        exit 
+        log-id 2 
+            description "Change Record"
+            from change 
+            to memory 200
+        exit 
+        log-id 3 
+            description "Main"
+            from main 
+            to memory 200
+        exit
+        log-id 8
+            from main security change
+            to syslog 8
+        exit
+        log-id 9 
+            from main security change 
+            to syslog 9
+        exit 
+        log-id 98 
+            from main security 
+            to snmp 1024
+        exit 
+        log-id 99 
+            from main security change 
+        exit 
+    exit 
+#--------------------------------------------------
+echo "System Security Cpm Hw Filters Configuration"
+#--------------------------------------------------
+    system
+        security
+        exit
+    exit
+#--------------------------------------------------
+echo "VLAN-Filter Configuration"
+#--------------------------------------------------
+    filter
+    exit
+#--------------------------------------------------
+echo "QoS Policy Configuration"
+#--------------------------------------------------
+    qos
+        fabric-profile 10 aggregate-mode create
+            description "a8-1gb-v2-sfp card profile"
+            aggregate-rate 2500000 unshaped-sap-cir 0
+        exit
+    exit
+#--------------------------------------------------
+echo "QoS Policy Configuration"
+#--------------------------------------------------
+    qos
+        mc-mlppp
+        exit
+    exit
+#--------------------------------------------------
+echo "Card Configuration"
+#--------------------------------------------------
+    card 1
+        card-type iom-sar
+{% for card in mda %}
+        mda {{ card.id }}
+            mda-type {{ card.mda_type }}
+{% if card.ethernet is defined and card.ethernet == true %}
+            network
+                ingress
+                    fabric-policy 10
+                exit
+            exit
+            access
+                ingress
+                    fabric-policy 10
+                exit
+            exit
+{% endif %}
+        exit
+{% endfor %}
+    exit
+#--------------------------------------------------
+echo "Port Configuration"
+#--------------------------------------------------
+{% for port in ports %}
+    port {{ port.id }}
+{% if port.description %}
+        description "{{ port.description }}"
+{% endif %}
+{% if port.type is defined %}
+{% if port.type == "ethernet" %}
+        ethernet
+{% if port.mode is defined %}
+            mode {{ port.mode }}
+{% endif %}
+            encap-type {{ port.encap }}
+            lldp
+                dest-mac nearest-bridge
+                    admin-status tx-rx
+                    notification
+                    tx-tlvs port-desc sys-name sys-desc sys-cap
+                    tx-mgmt-address system
+                exit
+            exit
+{% if port.mode is defined %}
+{% if port.mode == "network" %}
+            ssm
+                code-type sonet
+                no shutdown
+            exit
+{% endif %}
+{% endif %}
+{% elif port.type == "tdm" %}
+        tdm
+            ds1
+                channel-group 1
+                    description "{{ port.description }}"
+{% if port.mode is defined %}
+                    mode network
+{% endif %}
+{% if port.encap is defined %}
+                    encap-type ppp-auto
+{% endif %}
+{% if port.timeslots is defined %}
+                    timeslots {{ port.timeslots }}
+{% endif %}
+                    no shutdown
+                exit
+                no shutdown
+            exit
+{% elif port.type == "rs232" %}
+        serial
+            rs232 
+                device-mode asynchronous
+                channel-group 1
+                    encap-type cem
+                    no shutdown
+                exit
+                no shutdown
+            exit
+{% endif %}
+{% endif %}
+        exit
+        no shutdown
+    exit
+{% endfor %}
+#--------------------------------------------------
+echo "Redundancy Configuration"
+#--------------------------------------------------
+    redundancy 
+        synchronize boot-env
+    exit 
+#--------------------------------------------------
+echo "External Alarm Configuration"
+#--------------------------------------------------
+    external-alarms
+    exit
+#--------------------------------------------------
+echo "Management Router Configuration"
+#--------------------------------------------------
+    router management
+    exit
+#--------------------------------------------------
+echo "Router (Network Side) Configuration"
+#--------------------------------------------------
+    router 
+        interface "system"
+            address {{ management.systemIP }}/32
+        exit
+{% for interface in router_interface %}
+        interface "{{ interface.id }}"
+            address {{ interface.address }}
+            ldp-sync-timer 5
+            port {{ interface.port }}
+            bfd 100 receive 100 multiplier 3
+        exit
+{% endfor %}
+        autonomous-system 65100
+        ecmp 8
+        router-id {{ management.systemIP }}
+#--------------------------------------------------
+echo "OSPFv2 Configuration"
+#--------------------------------------------------
+        ospf
+            overload-on-boot timeout 120 
+            traffic-engineering
+{% for area in ospf %}
+            area {{area.id}}
+{% for interface in area.interfaces %}
+                interface "{{interface.id}}"
+{% if interface.type is defined %}
+{% if interface.type == "point-to-point" %}
+                    interface-type point-to-point
+                    authentication-type message-digest
+                    bfd-enable
+                    message-digest-key 1 md5 {{ ospf_secret }}
+{% endif %}
+{% endif %}
+                exit
+{% endfor %}
+            exit
+{% endfor %}
+        exit
+#--------------------------------------------------
+echo "LDP Configuration"
+#--------------------------------------------------
+        ldp
+            interface-parameters
+{% for interface in router_interface %}
+                interface "{{ interface.id }}"
+                exit
+{% endfor %}
+            exit
+            targeted-session
+            exit
+        exit
+    exit
+
+#--------------------------------------------------
+echo "Service Configuration"
+#--------------------------------------------------
+    service
+        customer 1 create
+            description "Default customer"
+        exit
+        customer 200 create
+            description "Data and Voice VPRN"
+        exit
+{% for service in services %}
+{% if service.type == "vprn" %}
+        {{ service.type }} {{ service.id }} customer {{ service.customer }} create
+            no shutdown
+            description "{{ service.description }}"
+            snmp-community wine1headache version both
+            vrf-import "vprn_import"
+            vrf-export "vprn_export"
+            autonomous-system 65100
+            route-distinguisher {{ management.systemIP }}:{{ service.id }}
+            auto-bind ldp
+{% for interface in service.interfaces %}
+{% if interface.substation is defined%}
+            interface "to-{{interface.vpls|lower}}" create
+{% else %}
+            interface "to-vpls-{{interface.id}}" create
+{% endif %}
+                description "{{ interface.description }}"
+                address {{ interface.address }}
+{% if interface.dhcp is defined %}
+                dhcp
+                    server 10.99.99.99 10.99.99.98 
+                    no shutdown
+                exit
+{% endif %}
+                vpls "vprn-11001-{{ interface.vpls }}"
+                exit
+            exit
+{% endfor %}
+        exit
+{% endif %}
+{% endfor %}
+{% for service in services %}
+{% if service.type == "vprn" %}
+{% for vpls in service.interfaces %}
+        vpls {{ vpls.id }} customer {{ service.customer }} create
+            description "{{ vpls.description }}"
+            allow-ip-int-binding
+            stp
+                shutdown
+            exit
+            service-name "vprn-11001-{{ vpls.vpls }}"
+{% for sap in vpls.saps %}
+            sap {{sap.id}} create
+                ingress
+                    qos 103 
+                exit
+                egress
+                    qos 103
+                exit
+            exit
+{% endfor %}
+            no shutdown
+        exit
+{% endfor %}
+{% endif %}
+{% if service.type == "m-vpls" %}
+        vpls {{ service.id }} customer {{ service.customer }} {{ service.type }} create
+            stp
+                priority 0
+                no shutdown
+            exit
+{% for sap in service.saps %}
+            sap {{sap.id}} create
+                managed-vlan-list
+                    range 1-4094
+                exit
+            exit
+{% endfor %}
+            no shutdown
+        exit
+{% endif %}
+{% endfor %}
+    exit
+#--------------------------------------------------
+echo "Router (Service Side) Configuration"
+#--------------------------------------------------
+    router 
+#--------------------------------------------------
+echo "OSPFv2 Configuration"
+#--------------------------------------------------
+        ospf
+        exit
+#--------------------------------------------------
+echo "Policy Configuration"
+#--------------------------------------------------
+        policy-options
+            begin
+            commit
+        exit
+#--------------------------------------------------
+echo "BGP Configuration"
+#--------------------------------------------------
+        bgp
+            vpn-apply-import
+            vpn-apply-export
+            min-route-advertisement 1
+            enable-peer-tracking
+            group "iBGP-area-1"
+                family ipv4 vpn-ipv4
+                local-as 65100
+                peer-as 65100
+                local-address {{ management.systemIP }}
+                neighbor 10.99.99.1
+                exit
+                neighbor 10.99.99.2
+                exit
+            exit
+            no shutdown
+        exit
+    exit
+
+#--------------------------------------------------
+echo "System Sync-If-Timing Configuration"
+#--------------------------------------------------
+    system
+        sync-if-timing
+            begin
+            ref-order external ref1 ref2
+            {% for num in timing %}
+            {# Leave the blank line below #}
+            
+            ref{{ num.id}}
+                source-port {{ num.port }}
+                no shutdown
+            exit
+            {% endfor %}
+            external
+                input-interface
+                    shutdown
+                exit
+            exit
+            commit
+        exit
+    exit
+#--------------------------------------------------
+echo "System Time Configuration"
+#--------------------------------------------------
+    system
+        time
+            ntp
+            exit
+        exit
+    exit
+#--------------------------------------------------
+echo "OAM Tests Configuration"
+#--------------------------------------------------
+    test-oam
+        twamp
+            server
+                shutdown
+            exit
+        exit
+    exit
+
+exit all

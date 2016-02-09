@@ -1,0 +1,21 @@
+---
+
+- name: Creating build directories for each host
+  hosts: sros
+  connection: local
+  gather_facts: no
+  tasks:
+    - set_fact:
+        build_dir: "{{ build_dir }}/{{ inventory_hostname }}"
+    - name: remove host build temp directory
+      file: path={{ build_dir }} state=absent
+    - name: create host build temp directory
+      file: path={{ build_dir }} state=directory
+
+- name: Template-build routers
+  hosts: sros
+  connection: local
+  gather_facts: no
+  roles:
+    - alcatel_router
+    - alcatel_bof

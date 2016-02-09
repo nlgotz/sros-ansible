@@ -1,0 +1,11 @@
+primary-image    cf3:\7705-TiMOS-{% if management.version is defined %}{{management.version}}{% else %}7.0.R4{% endif %}
+
+primary-config   cf3:\{{ management.hostname }}.cfg
+primary-dns      10.99.99.99 
+dns-domain       {{ domain_name }}
+autonegotiate
+duplex           full
+speed            100
+wait             3
+persist          on
+console-speed    115200

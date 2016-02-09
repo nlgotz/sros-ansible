@@ -1,0 +1,3 @@
+---
+- name: template building
+  template: src=bof.j2 dest={{ build_dir }}/bof.cfg
